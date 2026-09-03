@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Book Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-stone-100 text-stone-800 min-h-screen p-4 pb-20">
+
+  <div class="max-w-md mx-auto">
+    <!-- Header & Obiettivo Annuale -->
+    <header class="mb-6">
+      <h1 class="text-2xl font-bold text-stone-900 tracking-tight">I Miei Libri 📚</h1>
+      <div class="mt-3 bg-white p-4 rounded-2xl shadow-sm border border-stone-200/80">
+        <div class="flex justify-between text-sm font-semibold mb-1">
+          <span>Obiettivo <span id="currentYear"></span></span>
+          <span id="goalText">0 / 12 completati</span>
+        </div>
+        <div class="w-full bg-stone-100 h-2.5 rounded-full overflow-hidden">
+          <div id="goalBar" class="bg-amber-600 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Statistiche Annuali Rapide -->
+    <section class="grid grid-cols-2 gap-3 mb-6">
+      <div class="bg-white p-3 rounded-xl border border-stone-200/80">
+        <div class="text-xs text-stone-500 font-semibold uppercase">Pagine Totali</div>
+        <div id="totalPagesRead" class="text-xl font-bold text-stone-800 mt-0.5">0</div>
+      </div>
+      <div class="bg-white p-3 rounded-xl border border-stone-200/80">
+        <div class="text-xs text-stone-500 font-semibold uppercase">Genere Top</div>
+        <div id="topGenre" class="text-xl font-bold text-stone-800 mt-0.5">-</div>
+      </div>
+    </section>
+
+    <!-- Box 3x3 Ultime Letture -->
+    <section class="mb-6">
+      <h2 class="text-lg font-bold mb-3">Le Ultime 9 Letture</h2>
+      <div id="recentCoversGrid" class="grid grid-cols-3 gap-2">
+        <!-- Generato tramite JS -->
+      </div>
+    </section>
+
+    <!-- Libri in Lettura -->
+    <section class="mb-6">
+      <h2 class="text-lg font-bold mb-3">In Lettura</h2>
+      <div id="readingList" class="space-y-3"></div>
+    </section>
+
+    <!-- Libri Completati -->
+    <section class="mb-8">
+      <h2 class="text-lg font-bold mb-3">Completati Quest'Anno</h2>
+      <div id="completedList" class="space-y-3"></div>
+    </section>
+
+    <!-- Form Aggiunta Libro -->
+    <section class="bg-white p-5 rounded-2xl shadow-sm border border-stone-200/80 mb-6">
+      <h3 class="font-bold text-base mb-3">Aggiungi Nuovo Libro</h3>
+      <form id="bookForm" class="space-y-3">
+        <input type="text" id="title" placeholder="Titolo" required class="w-full p-2.5 rounded-xl border border-stone-200 text-sm focus:outline-none focus:border-stone-500">
+        <input type="text" id="author" placeholder="Autore" required class="w-full p-2.5 rounded-xl border border-stone-200 text-sm focus:outline-none focus:border-stone-500">
+        <div class="grid grid-cols-2 gap-2">
+          <input type="number" id="pages" placeholder="Pagine totali" required class="p-2.5 rounded-xl border border-stone-200 text-sm focus:outline-none focus:border-stone-500">
+          <input type="text" id="genre" placeholder="Genere (es. Romanzo)" required class="p-2.5 rounded-xl border border-stone-200 text-sm focus:outline-none focus:border-stone-500">
+        </div>
+        <input type="url" id="cover" placeholder="URL Copertina (lascia vuoto per auto-ricerca)" class="w-full p-2.5 rounded-xl border border-stone-200 text-sm focus:outline-none focus:border-stone-500">
+        <button id="submitBtn" type="submit" class="w-full bg-stone-900 text-white font-semibold py-2.5 rounded-xl text-sm active:scale-[0.99] transition">Aggiungi Libro</button>
+      </form>
+    </section>
+
+    <!-- Backup e Ripristino Dati -->
+    <footer class="flex justify-between items-center text-xs text-stone-400 pt-2 border-t border-stone-200">
+      <button onclick="exportData()" class="underline hover:text-stone-700">Esporta Backup (JSON)</button>
+      <label class="underline hover:text-stone-700 cursor-pointer">
+        Ripristina Dati
+        <input type="file" onchange="importData(event)" class="hidden" accept=".json">
+      </label>
+    </footer>
+  </div>
+
+  <script>
+    const GOAL_ANNUALE = 12;
+    const currentYear = new Date().getFullYear();
+    document.getElementById('currentYear').textContent = currentYear;
+
+    let books = JSON.parse(localStorage.getItem('myReadingList') || '[]');
+
+    function save() {
+      localStorage.setItem('myReadingList', JSON.stringify(books));
+      render();
+    }
+
+    async function addBook(e) {
+      e.preventDefault();
+      
+      const title = document.getElementById('title').value;
+      const author = document.getElementById('author').value;
+      const pages = parseInt(document.getElementById('pages').value);
+      const genre = document.getElementById('genre').value.trim();
+      let cover = document.getElementById('cover').value;
+      
+      const btn = document.getElementById('submitBtn');
+      const originalBtnText = btn.textContent;
+
+      if (!cover) {
+        try {
+          btn.textContent = "Cerco la copertina... ⏳";
+          btn.disabled = true;
+          
+          const query = encodeURIComponent(`${title} ${author}`);
+          const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&maxResults=1`);
+          const data = await response.json();
+          
+          if (data.items && data.items.length > 0 && data.items[0].volumeInfo.imageLinks) {
+            cover = data.items[0].volumeInfo.imageLinks.thumbnail.replace('http:', 'https:');
+          }
+        } catch (error) {
+          console.error("Errore nel recupero della copertina:", error);
+        } finally {
+          btn.textContent = originalBtnText;
+          btn.disabled = false;
+        }
+      }
+
+      if (!cover) {
+        cover = 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=300&q=80';
+      }
+
+      const newBook = {
+        id: Date.now(), // Funge anche da data di aggiunta esatta
+        title: title,
+        author: author,
+        pages: pages,
+        currentPage: 0,
+        genre: genre,
+        cover: cover,
+        completedYear: null,
+        dateCompleted: null, // Memorizza quando viene finito
+        rating: 0
+      };
+      
+      books.push(newBook);
+      save();
+      e.target.reset();
+    }
+
+    function updatePage(id, delta) {
+      const b = books.find(item => item.id === id);
+      if (!b) return;
+      
+      const wasCompleted = b.completedYear !== null;
+      b.currentPage = Math.max(0, Math.min(b.pages, b.currentPage + delta));
+      
+      // Se finisce di leggerlo ora
+      if (b.currentPage === b.pages && !wasCompleted) {
+        b.completedYear = currentYear;
+        b.dateCompleted = Date.now();
+      } else if (b.currentPage < b.pages) {
+        b.completedYear = null;
+        b.dateCompleted = null;
+      }
+      save();
+    }
+
+    function setRating(id, stars) {
+      const b = books.find(item => item.id === id);
+      if (b) {
+        b.rating = stars;
+        save();
+      }
+    }
+
+    function deleteBook(id) {
+      if (confirm("Vuoi davvero rimuovere questo libro dalla lista?")) {
+        books = books.filter(b => b.id !== id);
+        save();
+      }
+    }
+
+    // Calcolo giorni intercorsi
+    function calcDays(dateAdded, dateCompleted) {
+      const start = dateAdded; 
+      const end = dateCompleted || Date.now();
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const days = Math.ceil((end - start) / msPerDay);
+      return Math.max(1, days); // Ritorna minimo 1 giorno
+    }
+
+    function render() {
+      const readingEl = document.getElementById('readingList');
+      const completedEl = document.getElementById('completedList');
+      const gridEl = document.getElementById('recentCoversGrid');
+      
+      readingEl.innerHTML = '';
+      completedEl.innerHTML = '';
+      gridEl.innerHTML = '';
+
+      const completedThisYear = books.filter(b => b.completedYear === currentYear);
+      const allCompleted = books.filter(b => b.completedYear !== null);
+      
+      // Obiettivo Annuale
+      const goalBar = document.getElementById('goalBar');
+      if (completedThisYear.length >= GOAL_ANNUALE) {
+        document.getElementById('goalText').innerHTML = `${completedThisYear.length} / ${GOAL_ANNUALE} completati 🏆`;
+        goalBar.className = "h-full rounded-full transition-all duration-300 bg-green-500";
+      } else {
+        document.getElementById('goalText').textContent = `${completedThisYear.length} / ${GOAL_ANNUALE} completati`;
+        goalBar.className = "h-full rounded-full transition-all duration-300 bg-amber-600";
+      }
+      goalBar.style.width = `${Math.min(100, (completedThisYear.length / GOAL_ANNUALE) * 100)}%`;
+
+      // Statistiche
+      const totalPages = completedThisYear.reduce((acc, b) => acc + b.pages, 0) + 
+                          books.filter(b => !b.completedYear).reduce((acc, b) => acc + b.currentPage, 0);
+      document.getElementById('totalPagesRead').textContent = totalPages.toLocaleString();
+
+      const genreCounts = {};
+      completedThisYear.forEach(b => { genreCounts[b.genre] = (genreCounts[b.genre] || 0) + 1; });
+      const topGenre = Object.keys(genreCounts).sort((a, b) => genreCounts[b] - genreCounts[a])[0] || '-';
+      document.getElementById('topGenre').textContent = topGenre;
+
+      // BOX 3x3 Copertine Ordine Cronologico (Max 9)
+      const sortedCompleted = [...allCompleted].sort((a, b) => (b.dateCompleted || b.id) - (a.dateCompleted || a.id)).slice(0, 9);
+      if (sortedCompleted.length === 0) {
+        gridEl.innerHTML = '<div class="col-span-3 text-sm text-stone-400 p-2 bg-white rounded-lg border border-stone-200">Nessun libro finito.</div>';
+      } else {
+        sortedCompleted.forEach(book => {
+          gridEl.innerHTML += `<img src="${book.cover}" class="w-full h-24 object-cover rounded-lg shadow-sm border border-stone-200/80">`;
+        });
+      }
+
+      // Render delle Card dei libri
+      books.forEach(book => {
+        const percent = Math.round((book.currentPage / book.pages) * 100);
+        const card = document.createElement('div');
+        card.className = "bg-white p-3.5 rounded-2xl shadow-sm border border-stone-200/80 flex gap-3.5 items-center";
+
+        // Tasto elimina universale (in alto a destra sulla card)
+        const headerCard = `
+          <div class="flex justify-between items-start mb-0.5">
+            <h4 class="font-bold text-stone-900 text-sm truncate pr-2">${book.title}</h4>
+            <button onclick="deleteBook(${book.id})" class="text-[10px] text-red-500 font-bold bg-red-50 px-1.5 py-0.5 rounded shrink-0">✕ Elimina</button>
+          </div>
+        `;
+
+        if (!book.completedYear) {
+          // LIBRO IN LETTURA
+          card.innerHTML = `
+            <img src="${book.cover}" class="w-16 h-22 object-cover rounded-lg bg-stone-200 shrink-0">
+            <div class="flex-1 min-w-0">
+              ${headerCard}
+              <p class="text-xs text-stone-500 mb-2 truncate">${book.author} • <span class="bg-stone-100 px-1.5 py-0.5 rounded">${book.genre}</span></p>
+              
+              <div class="flex justify-between items-center text-xs mb-1">
+                <span class="font-semibold text-amber-700">${percent}%</span>
+                <span class="text-stone-400">${book.currentPage}/${book.pages} pag.</span>
+              </div>
+              <div class="w-full bg-stone-100 h-1.5 rounded-full overflow-hidden mb-2">
+                <div class="bg-amber-600 h-full rounded-full" style="width: ${percent}%"></div>
+              </div>
+              <div class="flex gap-1 mt-1.5">
+                <button onclick="updatePage(${book.id}, -10)" class="text-xs bg-stone-100 px-1.5 py-1 rounded-md font-semibold">-10</button>
+                <button onclick="updatePage(${book.id}, -1)" class="text-xs bg-stone-100 px-1.5 py-1 rounded-md font-semibold">-1</button>
+                <button onclick="updatePage(${book.id}, 1)" class="text-xs bg-stone-100 px-1.5 py-1 rounded-md font-semibold">+1</button>
+                <button onclick="updatePage(${book.id}, 10)" class="text-xs bg-stone-100 px-1.5 py-1 rounded-md font-semibold">+10</button>
+                <button onclick="updatePage(${book.id}, ${book.pages - book.currentPage})" class="text-[11px] bg-amber-100 text-amber-800 px-2 py-1 rounded-md font-semibold ml-auto">Finito</button>
+              </div>
+            </div>
+          `;
+          readingEl.appendChild(card);
+        } else {
+          // LIBRO COMPLETATO
+          const daysToRead = calcDays(book.id, book.dateCompleted); // ID è il timestamp di aggiunta
+          card.innerHTML = `
+            <img src="${book.cover}" class="w-16 h-22 object-cover rounded-lg bg-stone-200 shrink-0">
+            <div class="flex-1 min-w-0">
+              ${headerCard}
+              <p class="text-xs text-stone-500 mb-2 truncate">${book.author} • <span class="bg-stone-100 px-1.5 py-0.5 rounded">${book.genre}</span></p>
+              
+              <div class="flex items-center justify-between mt-3">
+                <div class="flex items-center gap-1 text-xs">
+                  <span class="text-stone-400">Voto:</span>
+                  ${[1,2,3,4,5].map(star => `
+                    <span onclick="setRating(${book.id}, ${star})" class="cursor-pointer ${book.rating >= star ? 'text-amber-500' : 'text-stone-200'} text-sm">★</span>
+                  `).join('')}
+                </div>
+                <span class="text-[10px] font-semibold text-stone-500 bg-stone-100 px-2 py-1 rounded-md">⏳ ${daysToRead} gg</span>
+              </div>
+            </div>
+          `;
+          completedEl.appendChild(card);
+        }
+      });
+    }
+
+    function exportData() {
+      const blob = new Blob([JSON.stringify(books, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `letture_backup_${currentYear}.json`;
+      a.click();
+    }
+
+    function importData(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        books = JSON.parse(ev.target.result);
+        save();
+      };
+      reader.readAsText(file);
+    }
+
+    document.getElementById('bookForm').addEventListener('submit', addBook);
+    render();
+  </script>
+</body>
+</html>
